@@ -25,7 +25,28 @@ This version integrates an AI agent capable of learning to play Progress Knight 
     *   **Monitoring**: View real-time agent status, key metrics like exploration rate (epsilon), memory usage, recent rewards, and auto-rebirth counts.
     *   **Control**: Pause, resume, save, and load the agent's learned model directly within the browser's local storage.
     *   **Demonstration Management**: Record, save, load, and clear human gameplay demonstrations. Initiate pre-training using loaded demonstrations.
-    *   **Hyperparameter Tuning**: Adjust various reward function weights and learning parameters (e.g., discount factor, learning rate, exploration decay, replay memory size) to customize the agent's learning process and objectives.
+    *   **Hyperparameter Tuning**: Adjust various reward function weights, learning parameters, and interaction settings via the UI to customize the agent's learning process and objectives. Parameters include:
+        *   **Reward Weights:**
+            *   `Net Income Wgt`: Reward weight for having positive net income.
+            *   `Bankruptcy Pen`: Penalty for going bankrupt (large negative).
+            *   `Job Progression Bonus`: Bonus for getting a higher-tier job in the same category.
+            *   `Income Gain Wgt`: Reward weight for raw income/day increase.
+            *   `Surplus Lvl Wgt`: Reward weight for sum of (Level - MaxLevel) increase.
+            *   `Item Count Wgt`: Base weight for compounding reward for active misc items (count^2 * weight).
+            *   `Item Loss Pen`: Penalty for misc item count decreasing (except on bankruptcy).
+            *   `Coin Gain Wgt`: Reward weight for logarithmic increase in coins.
+            *   `Evil Gain Wgt`: Reward weight for increasing the Evil resource.
+            *   `Unlock Bonus`: Bonus reward per newly unlocked job, skill, or item.
+            *   `Death Penalty`: Penalty for hitting the lifespan limit without rebirthing.
+        *   **Learning Parameters:**
+            *   `Gamma (Discount)`: Discount factor for future rewards (0=myopic, ~1=far-sighted).
+            *   `Min Epsilon`: Minimum exploration chance (agent never stops exploring entirely).
+            *   `Epsilon Decay`: Multiplier for exploration rate decay per step (e.g., 0.999 = slow decay).
+            *   `Learning Rate`: Step size for adjusting neural network weights during training.
+            *   `Max Memory Size`: Maximum number of past experiences stored for experience replay.
+            *   `Batch Size`: Number of experiences sampled from memory for each training step.
+        *   **Interaction:**
+            *   `Action Frequency`: Agent makes a decision every N game ticks.
 *   **Game Speed Control**: An adjustable game speed multiplier allows for significantly accelerated agent training and observation of long-term strategies.
 *   **Customizable Goals**: By tuning the reward parameters, the agent can be guided to prioritize different aspects of the game, such as maximizing income, achieving specific milestones, or balancing exploration and exploitation.
 
