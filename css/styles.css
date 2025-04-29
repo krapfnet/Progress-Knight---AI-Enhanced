@@ -157,17 +157,3 @@ button:focus {
 }
 
 /* Removed dashboard styles */
-
-/* Style for the parameter descriptions */
-.param-description {
-    font-size: 0.8em;
-    color: grey;
-    font-style: italic;
-    text-align: left; /* Align text to the left within its grid cell */
-}
-
-/* Adjust input field width in the grid */
-#agentParamsInputs input[type="number"] {
-    width: 100px; /* Give inputs a fixed width */
-    justify-self: start; /* Align input to the start of its grid cell */
-}

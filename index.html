@@ -288,105 +288,47 @@
                     </div>
 
                     <hr>
-                    <h3>Demonstrations (Learn from Human Play)</h3>
-                    <div style="margin-bottom: 10px;">
-                        <label>
-                            <input type="checkbox" id="recordDemosCheckbox" onchange="toggleRecording(this.checked)">
-                            Record My Actions as Demonstrations
-                        </label>
-                        <br>
-                        <span style="font-size: small; color: gray;">Demonstrations collected: <span id="demoCount">0</span></span>
-                    </div>
-                     <div style="margin-bottom: 15px;">
-                        <button class="w3-button button" onclick="uiClearDemos()">Clear Stored Demos</button>
-                        <button class="w3-button button" onclick="uiSaveDemos()">Save Demos</button>
-                        <button class="w3-button button" onclick="uiLoadDemos()">Load Demos</button>
-                         <span style="font-size: small; color: gray;">(Uses browser local storage)</span>
-
-                    </div>
-                    <div style="margin-bottom: 15px;">
-                        <button class="w3-button button w3-blue" onclick="uiPretrainAgent()">Pre-train Agent on Loaded Demos</button>
-                        <span style="font-size: small; color: gray;">(Trains agent to mimic loaded demos)</span>
-                    </div>
-
-
-                    <hr>
                     <h3>Agent Parameters</h3>
-                    <div id="agentParamsInputs" style="display: grid; grid-template-columns: auto auto 1fr; gap: 5px 10px; align-items: center;">
+                    <div id="agentParamsInputs" style="display: grid; grid-template-columns: auto 1fr; gap: 5px 10px; align-items: center;">
                         <!-- Rewards -->
-                        <label for="paramNetIncome">Net Income Wgt:</label> 
+                        <label for="paramNetIncome">Net Income Wgt:</label>
                         <input type="number" step="any" id="paramNetIncome" class="agent-param-input">
-                        <span class="param-description">Reward weight for having positive net income.</span>
-
-                        <label for="paramBankruptcy">Bankruptcy Pen:</label> 
+                        <label for="paramBankruptcy">Bankruptcy Pen:</label>
                         <input type="number" step="any" id="paramBankruptcy" class="agent-param-input">
-                        <span class="param-description">Penalty for going bankrupt (large negative).</span>
-
-                        <label for="paramJobProgressionBonus">Job Progression Bonus:</label>
-                        <input type="number" step="any" id="paramJobProgressionBonus" class="agent-param-input">
-                        <span class="param-description">Bonus for getting a higher-tier job in the same category.</span>
-
                         <label for="paramIncomeGain">Income Gain Wgt:</label>
                         <input type="number" step="any" id="paramIncomeGain" class="agent-param-input">
-                        <span class="param-description">Reward weight for raw income/day increase (low priority).</span>
-
                         <label for="paramSurplusLevel">Surplus Lvl Wgt:</label>
                         <input type="number" step="any" id="paramSurplusLevel" class="agent-param-input">
-                        <span class="param-description">Reward weight for (Level - MaxLevel) sum increase.</span>
-
                         <label for="paramItemCount">Item Count Wgt:</label>
                         <input type="number" step="any" id="paramItemCount" class="agent-param-input">
-                        <span class="param-description">Base weight for compounding reward for active misc items (count^2 * weight).</span>
-
                         <label for="paramItemLoss">Item Loss Pen:</label>
                         <input type="number" step="any" id="paramItemLoss" class="agent-param-input">
-                        <span class="param-description">Penalty for misc item count decreasing (except on bankruptcy).</span>
-
                         <label for="paramCoinGain">Coin Gain Wgt:</label>
                         <input type="number" step="any" id="paramCoinGain" class="agent-param-input">
-                        <span class="param-description">Reward weight for logarithmic increase in coins.</span>
-
                         <label for="paramEvilGain">Evil Gain Wgt:</label>
                         <input type="number" step="any" id="paramEvilGain" class="agent-param-input">
-                        <span class="param-description">Reward weight for increasing Evil resource.</span>
-
                         <label for="paramUnlockBonus">Unlock Bonus:</label>
                         <input type="number" step="any" id="paramUnlockBonus" class="agent-param-input">
-                        <span class="param-description">Bonus reward per newly unlocked entity.</span>
-
                         <label for="paramDeathPenalty">Death Penalty:</label>
                         <input type="number" step="any" id="paramDeathPenalty" class="agent-param-input">
-                        <span class="param-description">Penalty for hitting lifespan limit (0 recommended).</span>
                         
                         <!-- Learning -->
                         <label for="paramGamma">Gamma (Discount):</label>
                         <input type="number" step="any" id="paramGamma" class="agent-param-input">
-                        <span class="param-description">Discount factor for future rewards (0=myopic, ~1=far-sighted).</span>
-
                         <label for="paramEpsilonMin">Min Epsilon:</label>
                         <input type="number" step="any" id="paramEpsilonMin" class="agent-param-input">
-                        <span class="param-description">Minimum exploration chance (agent never stops exploring).</span>
-
                         <label for="paramEpsilonDecay">Epsilon Decay:</label>
                         <input type="number" step="any" id="paramEpsilonDecay" class="agent-param-input">
-                        <span class="param-description">Multiplier for exploration rate decay (e.g., 0.999 = slow decay).</span>
-
                         <label for="paramLearningRate">Learning Rate:</label>
                         <input type="number" step="any" id="paramLearningRate" class="agent-param-input">
-                        <span class="param-description">How much the neural network weights adjust per training step.</span>
-
                         <label for="paramMaxMemory">Max Memory Size:</label>
                         <input type="number" id="paramMaxMemory" class="agent-param-input">
-                        <span class="param-description">Max number of past experiences stored for replay.</span>
-
                         <label for="paramBatchSize">Batch Size:</label>
                         <input type="number" id="paramBatchSize" class="agent-param-input">
-                        <span class="param-description">Number of experiences sampled for each training step.</span>
                         
                         <!-- Interaction -->
-                        <label for="paramActionFreq">Action Frequency:</label>
+                         <label for="paramActionFreq">Action Frequency:</label>
                         <input type="number" id="paramActionFreq" class="agent-param-input">
-                        <span class="param-description">Agent makes a decision every N game ticks.</span>
                     </div>
                     <button class="w3-button button" style="margin-top: 10px;" onclick="saveAgentParams()">Save Parameters</button>
                     <span style="font-size: small; color: gray;">(Saves to browser local storage)</span>

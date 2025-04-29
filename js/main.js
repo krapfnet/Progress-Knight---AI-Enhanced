@@ -377,43 +377,19 @@ function setTimeWarping() {
 }
 
 function setTask(taskName) {
-    if (isRecording) {
-        const state = getAgentState();
-        const actionIndex = actionMap.findIndex(a => a && a.type === 'setTask' && a.name === taskName);
-        if (actionIndex !== -1 && state) {
-            demonstrations.push({ state, actionIndex });
-            updateDemoCountUI();
-        }
-    }
     var task = gameData.taskData[taskName]
     task instanceof Job ? gameData.currentJob = task : gameData.currentSkill = task
 }
 
 function setProperty(propertyName) {
-    if (isRecording) {
-        const state = getAgentState();
-        const actionIndex = actionMap.findIndex(a => a && a.type === 'setProperty' && a.name === propertyName);
-        if (actionIndex !== -1 && state) {
-            demonstrations.push({ state, actionIndex });
-            updateDemoCountUI();
-        }
-    }
     var property = gameData.itemData[propertyName]
     gameData.currentProperty = property
 }
 
 function setMisc(miscName) {
-    if (isRecording) {
-        const state = getAgentState();
-        const actionIndex = actionMap.findIndex(a => a && a.type === 'setMisc' && a.name === miscName);
-        if (actionIndex !== -1 && state) {
-            demonstrations.push({ state, actionIndex });
-            updateDemoCountUI();
-        }
-    }
     var misc = gameData.itemData[miscName]
     if (gameData.currentMisc.includes(misc)) {
-        for (let i = 0; i < gameData.currentMisc.length; i++) {
+        for (i = 0; i < gameData.currentMisc.length; i++) {
             if (gameData.currentMisc[i] == misc) {
                 gameData.currentMisc.splice(i, 1)
             }
@@ -886,30 +862,17 @@ function removeSpaces(string) {
 }
 
 function rebirthOne() {
-    if (isRecording) {
-        const state = getAgentState();
-        const actionIndex = actionMap.findIndex(a => a && a.type === 'rebirthOne');
-        if (actionIndex !== -1 && state) {
-            demonstrations.push({ state, actionIndex });
-            updateDemoCountUI();
-        }
-    }
     gameData.rebirthOneCount += 1
+
     rebirthReset()
 }
 
 function rebirthTwo() {
-    if (isRecording) {
-        const state = getAgentState();
-        const actionIndex = actionMap.findIndex(a => a && a.type === 'rebirthTwo');
-        if (actionIndex !== -1 && state) {
-            demonstrations.push({ state, actionIndex });
-            updateDemoCountUI();
-        }
-    }
     gameData.rebirthTwoCount += 1
     gameData.evil += getEvilGain()
+
     rebirthReset()
+
     for (taskName in gameData.taskData) {
         var task = gameData.taskData[taskName]
         task.maxLevel = 0
@@ -1066,27 +1029,26 @@ function updateUI() {
 
 function update() {
     // --- RL Agent Step ---
+    // Call agent step first, let it handle its state including death/rebirth logic
     if (typeof agentStep === 'function') {
         agentStep(); 
     }
     // ---------------------
 
-    const alive = isAlive();
-    increaseDays();
+    // Check if player is alive for game progression logic
+    const alive = isAlive(); // isAlive also updates UI text if dead
 
-    // Re-enable auto features - agent will override if active
-    autoPromote(); // Uncommented
-    autoLearn();   // Uncommented
+    increaseDays(); // Note: This won't increase days if dead because getGameSpeed() will be 0
 
     // Perform game tasks only if alive
     if (alive) {
-        // Ensure currentJob/Skill aren't null before trying to use them
-        if (gameData.currentJob) doCurrentTask(gameData.currentJob); 
-        if (gameData.currentSkill) doCurrentTask(gameData.currentSkill);
-        applyExpenses();
+        doCurrentTask(gameData.currentJob)
+        doCurrentTask(gameData.currentSkill)
+        applyExpenses()
     }
 
-    updateUI();
+    // UI always updates
+    updateUI()
 }
 
 function resetGameData() {
@@ -1227,16 +1189,9 @@ if (typeof initializeAgent === 'function') {
 }
 // ----------------------------------------------------
 
-// Set default tab to Jobs initially
-const defaultTabButton = document.getElementById("jobTabButton"); 
-if (defaultTabButton) {
-    setTab(defaultTabButton, "jobs"); 
-} else {
-    // Fallback if even jobs isn't found?
-    console.error("Job tab button not found for default set.");
-}
+setTab(jobTabButton, "jobs")
 
-update();
+update()
 setInterval(update, 1000 / updateSpeed)
 setInterval(saveGameData, 3000)
 setInterval(setSkillWithLowestMaxXp, 1000)

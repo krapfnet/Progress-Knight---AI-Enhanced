@@ -1,38 +1,29 @@
 // TensorFlow.js will be used for the neural network and learning algorithms.
 // We'll need to import it in the HTML file later.
 
-const PARAMS_STORAGE_KEY = 'progressKnightAgentParams'; // Moved to top
-const DEMOS_STORAGE_KEY = 'progressKnightAgentDemos'; // Moved to top
-
 // --- Agent Parameters (Defaults & Current Values) ---
 let agentParams = {
     // Rewards
-    positiveNetIncomeWeight: 0.2,  // Increased default
-    bankruptcyPenalty: -150,      
-    jobProgressionBonus: 20.0, 
-    incomeGainWeight: 0.01,      // Keeping low, emphasize Net
+    positiveNetIncomeWeight: 0.02, // Added default
+    bankruptcyPenalty: -150,      // Added default
+    incomeGainWeight: 0.01,      
     surplusLevelGainWeight: 1.0, 
-    itemCountWeight: 0.2,        // Increased default
+    itemCountWeight: 0.1,        
     itemLossPenalty: 10.0,       
-    coinGainLogWeight: 0.1,      // Increased default
+    coinGainLogWeight: 0.1,      
     evilGainWeight: 1.0,         
     unlockBonus: 15.0,           
-    deathPenalty: 0,             // Changed default to 0
+    deathPenalty: -100,          
     // Learning
-    gamma: 0.99,           
-    epsilonMin: 0.05,       
-    epsilonDecay: 0.999,     
-    learningRate: 0.0005,    
-    maxMemorySize: 10000,     
-    agentBatchSize: 32,      
+    gamma: 0.99,           // Discount rate
+    epsilonMin: 0.05,       // Minimum exploration rate
+    epsilonDecay: 0.999,     // Exploration decay rate
+    learningRate: 0.0005,    // NN learning rate
+    maxMemorySize: 10000,     // Replay buffer size
+    agentBatchSize: 32,      // Training batch size
     // Interaction
-    agentActionFrequency: 25 // Increased default
+    agentActionFrequency: 10 // Agent acts every N game ticks
 };
-
-// --- Global Demonstration Storage ---
-let demonstrations = [];
-let isRecording = false;
-// const DEMOS_STORAGE_KEY = 'progressKnightAgentDemos'; // Removed from here
 
 class RLAgent {
     constructor(stateSize, actionSize) {
@@ -47,7 +38,6 @@ class RLAgent {
         this.epsilonMin = agentParams.epsilonMin; 
         this.epsilonDecay = agentParams.epsilonDecay; 
         this.learningRate = agentParams.learningRate; 
-        this.isTraining = false; // Added training lock flag
 
         // --- Neural Network Model (using TensorFlow.js) ---
         this.model = this._buildModel(); // learningRate is used here
@@ -148,14 +138,8 @@ class RLAgent {
      * Trains the neural network using a batch of experiences from the replay memory (DQN).
      */
     async replay(batchSize) {
-        // Check training lock
-        if (this.isTraining) {
-            // console.log("Replay skipped: Training already in progress.");
-            return; 
-        }
-        
         if (!this.model || typeof tf === 'undefined' || this.memory.length < batchSize) {
-            return; 
+            return; // Not enough memory or model not ready
         }
 
         // Sample a minibatch from memory
@@ -176,30 +160,24 @@ class RLAgent {
         const nextStates = minibatch.map(mem => mem.nextState);
         const dones = minibatch.map(mem => mem.done);
 
-        // Define tensors outside try block for disposal
-        let stateTensor, nextStateTensor, currentQValuesTensor, nextQValuesTensor, targetQValuesTensor;
-
-        try {
-            this.isTraining = true; // Set training lock
-
+        await tf.tidy(async () => {
             // Convert to tensors
-            stateTensor = tf.tensor2d(states, [minibatch.length, this.stateSize]);
-            nextStateTensor = tf.tensor2d(nextStates, [minibatch.length, this.stateSize]);
+            const stateTensor = tf.tensor2d(states, [minibatch.length, this.stateSize]);
+            const nextStateTensor = tf.tensor2d(nextStates, [minibatch.length, this.stateSize]);
 
             // Predict Q-values for current states and next states
-            currentQValuesTensor = this.model.predict(stateTensor);
-            nextQValuesTensor = this.model.predict(nextStateTensor);
+            const currentQValuesTensor = this.model.predict(stateTensor);
+            const nextQValuesTensor = this.model.predict(nextStateTensor);
 
             // Clone current Q-values to update targets
-            const targetQValues = currentQValuesTensor.clone().arraySync(); 
-            const nextQValuesData = nextQValuesTensor.arraySync(); // Get data for sync loop
+            const targetQValues = currentQValuesTensor.clone().arraySync(); // Use arraySync for modification
 
             // Calculate target Q-values using the Bellman equation
             for (let i = 0; i < minibatch.length; i++) {
                 let target = rewards[i];
                 if (!dones[i]) {
-                    // Find the max Q-value for the next state from sync data
-                    const maxNextQ = Math.max(...nextQValuesData[i]); 
+                    // Find the max Q-value for the next state
+                    const maxNextQ = tf.max(nextQValuesTensor.slice([i, 0], [1, this.actionSize])).dataSync()[0];
                     target += this.gamma * maxNextQ;
                 }
                 // Update the Q-value for the action actually taken
@@ -207,31 +185,23 @@ class RLAgent {
             }
 
             // Convert target Q-values back to tensor
-            targetQValuesTensor = tf.tensor2d(targetQValues, [minibatch.length, this.actionSize]);
+            const targetQValuesTensor = tf.tensor2d(targetQValues, [minibatch.length, this.actionSize]);
 
             // Train the model
             const history = await this.model.fit(stateTensor, targetQValuesTensor, {
-                epochs: 1, 
-                verbose: 0 
+                epochs: 1, // Train for one epoch per replay step
+                verbose: 0 // Suppress verbose logging during fit
             });
+
              // console.log("Replay Training Loss:", history.history.loss[0]);
-        } catch(err) {
-             console.error("Error during replay:", err);
-        } finally {
-             // Manual Tensor Disposal
-             if (stateTensor) stateTensor.dispose();
-             if (nextStateTensor) nextStateTensor.dispose();
-             if (currentQValuesTensor) currentQValuesTensor.dispose();
-             if (nextQValuesTensor) nextQValuesTensor.dispose();
-             if (targetQValuesTensor) targetQValuesTensor.dispose();
-             // console.log("Disposed replay tensors.");
-             
-             this.isTraining = false; // Release training lock
-        }
-        
-        // Decay epsilon after training
-        if (this.epsilon > this.epsilonMin) {
-            this.epsilon *= this.epsilonDecay;
+             // currentQValuesTensor.dispose(); // tf.tidy handles disposal
+             // nextQValuesTensor.dispose();
+             // targetQValuesTensor.dispose();
+        });
+
+        // Decay epsilon using agentParams values
+        if (this.epsilon > this.epsilonMin) { // this.epsilonMin was set from agentParams.epsilonMin
+            this.epsilon *= this.epsilonDecay; // this.epsilonDecay was set from agentParams.epsilonDecay
         }
     }
 
@@ -274,103 +244,6 @@ class RLAgent {
             console.log("Model saved successfully:", saveResult);
         } catch (err) {
             console.error(`Failed to save model to ${modelPath}.`, err);
-        }
-    }
-
-    /**
-     * Pre-trains the model on human demonstrations using supervised learning.
-     * @param {Array} demonstrationsData - Array of {state, actionIndex} objects.
-     * @param {number} epochs - Number of training epochs.
-     */
-    async pretrain(demonstrationsData, epochs = 5) {
-        if (!this.model || typeof tf === 'undefined') {
-            console.error("Model not ready for pretraining.");
-            alert("Model not ready for pretraining.");
-            return;
-        }
-        if (!demonstrationsData || demonstrationsData.length === 0) {
-            console.warn("No demonstration data provided for pretraining.");
-            alert("No demonstration data provided for pretraining.");
-            return;
-        }
-
-        console.log(`Starting pretraining on ${demonstrationsData.length} demonstrations for ${epochs} epochs...`);
-        alert(`Starting pretraining on ${demonstrationsData.length} demonstrations for ${epochs} epochs. This might take a moment and may freeze the browser tab.`);
-
-        const originalOptimizer = tf.train.adam(this.learningRate);
-        const originalLoss = 'meanSquaredError';
-        const originalActivation = 'linear'; // Assuming last layer is linear for DQN
-
-        let statesTensor, actionsTensor, actionsOneHotTensor;
-
-        try {
-            const states = demonstrationsData.map(d => d.state);
-            const actions = demonstrationsData.map(d => d.actionIndex);
-
-            statesTensor = tf.tensor2d(states, [states.length, this.stateSize]);
-            actionsTensor = tf.tensor1d(actions, 'int32'); 
-            
-            // Convert actions to one-hot encoding
-            actionsOneHotTensor = tf.oneHot(actionsTensor, this.actionSize).toFloat(); // Depth is actionSize
-
-            console.log("Pretrain States Tensor Shape:", statesTensor.shape);
-            console.log("Pretrain Actions OneHot Shape:", actionsOneHotTensor.shape);
-            
-            // Ensure states tensor is float32
-            const statesTensorFloat = statesTensor.toFloat(); 
-
-            // 3. Compile model for classification with categoricalCrossentropy
-            // Requires softmax activation on the output layer for probabilities.
-            // Temporarily rebuild or modify the last layer? Less ideal.
-            // Alternatively, specify fromLogits=true for categoricalCrossentropy if supported?
-            // Let's try compiling with categoricalCrossentropy and see if TF handles it.
-            // NOTE: The underlying model's last layer is still 'linear'. 
-            // This loss expects probabilities (softmax output). TF might handle logits implicitly,
-            // but this mismatch could be problematic.
-             this.model.compile({
-                loss: 'categoricalCrossentropy', // Changed loss
-                optimizer: tf.train.adam(this.learningRate), 
-                metrics: ['accuracy']
-            });
-            console.log("Model recompiled for pretraining with categoricalCrossentropy.");
-
-            // 4. Train using model.fit() with one-hot actions
-            const history = await this.model.fit(statesTensorFloat, actionsOneHotTensor, { 
-                epochs: epochs,
-                batchSize: agentParams.agentBatchSize || 32, 
-                shuffle: true,
-                validationSplit: 0.1, 
-                callbacks: {
-                    onEpochEnd: (epoch, logs) => {
-                         console.log(`Pretrain Epoch ${epoch + 1}/${epochs} - Loss: ${logs.loss.toFixed(4)}, Acc: ${logs.acc.toFixed(4)}, Val Loss: ${logs.val_loss.toFixed(4)}, Val Acc: ${logs.val_acc.toFixed(4)}`);
-                    }
-                }
-            });
-            console.log("Pretraining fit complete.", history.history);
-
-        } catch (err) {
-            console.error("Error during pretraining:", err); 
-            alert(`Error during pretraining: ${err.message || err}. Check console.`);
-        } finally {
-             // Manual Tensor Disposal
-             if (statesTensor) statesTensor.dispose();
-             if (statesTensorFloat) statesTensorFloat.dispose(); 
-             if (actionsTensor) actionsTensor.dispose();
-             if (actionsOneHotTensor) actionsOneHotTensor.dispose(); // Dispose one-hot tensor
-             console.log("Disposed pretraining tensors.");
-            
-             // Restore original model compilation for RL
-             this.model.compile({
-                loss: originalLoss, 
-                optimizer: originalOptimizer,
-                metrics: ['accuracy'] 
-            });
-            console.log("Model recompiled for RL fine-tuning.");
-             // Modify alert to reflect potential success or failure
-             // Alert is now inside the catch block on failure
-             if (!err) { // Check if error occurred (less ideal, better flag needed ideally)
-                 alert("Pretraining finished.");
-             } 
         }
     }
 }
@@ -604,16 +477,14 @@ function captureStateSnapshot() {
     const currentIncome = (typeof getIncome === 'function') ? getIncome() : 0;
     const currentExpense = (typeof getExpense === 'function') ? getExpense() : 0; // Need getExpense
     const actualNetIncome = currentIncome - currentExpense; // Calculate actual net
-    const currentPropertyName = (gameData && gameData.currentProperty) ? gameData.currentProperty.name : "";
-    const currentJobName = (gameData && gameData.currentJob) ? gameData.currentJob.name : ""; // Added
+    const currentPropertyName = (gameData && gameData.currentProperty) ? gameData.currentProperty.name : ""; // Get property name
 
     return {
         totalSkillLevel: totalSkill, 
         totalSurplusLevel: calculateTotalSurplusLevel(), 
         income: currentIncome, 
-        actualNetIncome: actualNetIncome,
-        property: currentPropertyName,
-        jobName: currentJobName, // Added
+        actualNetIncome: actualNetIncome, // Added
+        property: currentPropertyName, // Added
         evil: gameData ? gameData.evil : 0,
         days: gameData ? gameData.days : 0,
         coins: gameData ? gameData.coins : 0, 
@@ -633,97 +504,72 @@ function calculateReward(previousStateSnapshot, currentStateSnapshot) {
     let reward = 0;
     
     // --- Parameters for tuning ---
-    const positiveNetIncomeWeight = agentParams.positiveNetIncomeWeight; 
-    const bankruptcyPenalty = agentParams.bankruptcyPenalty;       
-    const surplusLevelGainWeight = agentParams.surplusLevelGainWeight; 
-    const itemCountWeight = agentParams.itemCountWeight;        
-    const itemLossPenalty = agentParams.itemLossPenalty;       
-    const coinGainLogWeight = agentParams.coinGainLogWeight;      
-    const evilGainWeight = agentParams.evilGainWeight;         
-    const unlockBonus = agentParams.unlockBonus;           
-    const jobProgressionBonus = agentParams.jobProgressionBonus; // Added
-    const deathPenalty = agentParams.deathPenalty;          
+    // const incomeGainWeight = 0.01;      // Less emphasis on raw income gain now
+    const positiveNetIncomeWeight = 0.02; // Added: Weight for having positive net income
+    const bankruptcyPenalty = -150;      // Added: Large penalty for going bankrupt
+    const surplusLevelGainWeight = 1.0; 
+    const itemCountWeight = 0.1;        
+    const itemLossPenalty = 10.0;       
+    const coinGainLogWeight = 0.05;     // Slightly reduced coin gain focus
+    const evilGainWeight = 1.0;         
+    const unlockBonus = 15.0;           
+    const deathPenalty = -100;          
 
-    // --- Calculate Rewards --- 
-
-    // 1. Positive Net Income
+    // 1. Reward for Positive Net Income
     if (currentStateSnapshot.actualNetIncome > 0) {
         // Give a reward scaled by the net income (normalize?)
         // Simple positive reward for now, scaled slightly by magnitude
         reward += Math.log10(currentStateSnapshot.actualNetIncome + 1) * positiveNetIncomeWeight;
     }
 
-    // 2. Bankruptcy Penalty
+    // 2. Penalty for Bankruptcy (Detecting switch to Homeless property)
     if (previousStateSnapshot.property !== 'Homeless' && currentStateSnapshot.property === 'Homeless') {
         reward += bankruptcyPenalty; 
         console.log("Agent went bankrupt! Applying penalty.");
     }
 
-    // 3. Job Progression Bonus (NEW)
-    if (currentStateSnapshot.jobName && previousStateSnapshot.jobName && 
-        currentStateSnapshot.jobName !== previousStateSnapshot.jobName) {
-        let prevCategory, prevIndex = -1, currentCategory, currentIndex = -1;
-        // Find categories and indices (assuming jobCategories is global)
-        for (const category in jobCategories) {
-            const prevJobIndex = jobCategories[category].indexOf(previousStateSnapshot.jobName);
-            const currentJobIndex = jobCategories[category].indexOf(currentStateSnapshot.jobName);
-            if (prevJobIndex !== -1) { 
-                prevCategory = category; 
-                prevIndex = prevJobIndex; 
-            }
-            if (currentJobIndex !== -1) { 
-                currentCategory = category; 
-                currentIndex = currentJobIndex; 
-            }
-        }
-        // If jobs are in the same category and index increased, give bonus
-        if (prevCategory && currentCategory && prevCategory === currentCategory && currentIndex > prevIndex) {
-            reward += jobProgressionBonus;
-            // console.log(`Agent progressed job from ${previousStateSnapshot.jobName} to ${currentStateSnapshot.jobName}! Bonus: ${jobProgressionBonus}`);
-        }
-    }
-
-    // 4. Surplus Level Gain
+    // --- Previous Rewards (Adjusted Order/Removed incomeGain) ---
+    // 3. Reward for Increase in Surplus Levels (Level > MaxLevel)
     const surplusLevelGain = currentStateSnapshot.totalSurplusLevel - previousStateSnapshot.totalSurplusLevel;
     if (surplusLevelGain > 0) {
         reward += surplusLevelGain * surplusLevelGainWeight;
     }
 
-    // 5. Item Count Reward
+    // 4. Compounding Reward for Active Misc Items (Count Squared)
     const currentItemCount = currentStateSnapshot.miscItemCount;
     if (currentItemCount > 0) {
         reward += (currentItemCount * currentItemCount) * itemCountWeight;
     }
 
-    // 6. Item Loss Penalty
+    // 5. Penalty for Losing Active Misc Items
     if (currentStateSnapshot.miscItemCount < previousStateSnapshot.miscItemCount && currentStateSnapshot.property !== 'Homeless') {
         // Only apply penalty if not due to bankruptcy (which has its own penalty)
         reward -= itemLossPenalty;
     }
 
-    // 7. Unlock Bonus
+    // 6. Reward for Unlocking New Entities
     const newlyUnlocked = new Set([...currentStateSnapshot.unlockedEntities].filter(x => !previousStateSnapshot.unlockedEntities.has(x)));
     if (newlyUnlocked.size > 0) {
         reward += newlyUnlocked.size * unlockBonus;
     }
 
-    // 8. Coin Gain (Log)
+    // 7. Reward for relative increase in coins (Logarithmic) - Reduced weight
     const logCoinGain = Math.log10(currentStateSnapshot.coins + 1) - Math.log10(previousStateSnapshot.coins + 1);
     if (logCoinGain > 0) {
         reward += logCoinGain * coinGainLogWeight;
     }
 
-    // 9. Evil Gain
-    const evilGain = currentStateSnapshot.evil - previousStateSnapshot.evil;
-    if (evilGain > 0) {
-        reward += evilGain * evilGainWeight;
-    }
+     // 8. Reward for gaining evil
+     const evilGain = currentStateSnapshot.evil - previousStateSnapshot.evil;
+     if (evilGain > 0) {
+         reward += evilGain * evilGainWeight;
+     }
      
-    // 10. Penalty for Dying (if deathPenalty !== 0)
-    if (!currentStateSnapshot.isAlive && previousStateSnapshot.isAlive) {
-        reward += deathPenalty; 
-        console.log("Agent died! Applying penalty.");
-    }
+     // 9. Penalty for Dying
+     if (!currentStateSnapshot.isAlive && previousStateSnapshot.isAlive) {
+         reward += deathPenalty; 
+         console.log("Agent died! Applying penalty.");
+     }
 
     lastReward = reward; 
     return reward;
@@ -774,7 +620,6 @@ function saveAgentParams() {
         // Read values from inputs and update the agentParams object
         agentParams.positiveNetIncomeWeight = getParamInput('paramNetIncome') ?? agentParams.positiveNetIncomeWeight;
         agentParams.bankruptcyPenalty = getParamInput('paramBankruptcy') ?? agentParams.bankruptcyPenalty;
-        agentParams.jobProgressionBonus = getParamInput('paramJobProgressionBonus') ?? agentParams.jobProgressionBonus;
         agentParams.incomeGainWeight = getParamInput('paramIncomeGain') ?? agentParams.incomeGainWeight;
         agentParams.surplusLevelGainWeight = getParamInput('paramSurplusLevel') ?? agentParams.surplusLevelGainWeight;
         agentParams.itemCountWeight = getParamInput('paramItemCount') ?? agentParams.itemCountWeight;
@@ -834,7 +679,6 @@ function loadAgentParams() {
 function updateParamsUI() {
     setParamInput('paramNetIncome', agentParams.positiveNetIncomeWeight);
     setParamInput('paramBankruptcy', agentParams.bankruptcyPenalty);
-    setParamInput('paramJobProgressionBonus', agentParams.jobProgressionBonus);
     setParamInput('paramIncomeGain', agentParams.incomeGainWeight);
     setParamInput('paramSurplusLevel', agentParams.surplusLevelGainWeight);
     setParamInput('paramItemCount', agentParams.itemCountWeight);
@@ -863,7 +707,6 @@ function initializeAgent() {
     }
 
     loadAgentParams(); // Load params before initializing agent
-    loadDemonstrations(); // Load demos on init
 
     console.log("Initializing RL Agent...");
     stateSize = calculateStateSize();
@@ -894,7 +737,6 @@ function initializeAgent() {
     // Update button states initially
     updateAgentControlButtonStates();
     updateParamsUI(); // Ensure UI matches loaded params initially
-    updateDemoCountUI(); // Initial update
 }
 
 function calculateStateSize() {
@@ -990,7 +832,7 @@ function buildActionMap() {
 
 // --- Agent Interaction Loop ---
 let stepsSinceLastAction = 0;
-const agentActionFrequency = 25; // Agent acts every N game ticks
+const agentActionFrequency = 10; // Agent acts every N game ticks
 const agentBatchSize = 32; // How many memories to replay each training step
 let currentStateSnapshot = null; // Store snapshot for reward calculation
 
@@ -1128,7 +970,6 @@ function updateAgentTabUI() {
     // if (maxMemoryEl) maxMemoryEl.textContent = agentParams.maxMemorySize; // Handled by updateParamsUI
     if (rewardEl) rewardEl.textContent = lastReward.toFixed(3);
     if (rebirthCounterEl) rebirthCounterEl.textContent = autoRebirthCounter; 
-    updateDemoCountUI(); // Update demo count frequently
 }
 
 // --- Periodic Saving ---
@@ -1138,88 +979,15 @@ setInterval(() => {
     }
 }, 60000); // Save every 60 seconds 
 
-// --- Demonstration Storage Functions ---
-function saveDemonstrations() {
-    try {
-        localStorage.setItem(DEMOS_STORAGE_KEY, JSON.stringify(demonstrations));
-        console.log(`Saved ${demonstrations.length} demonstrations to localStorage.`);
-        alert(`Saved ${demonstrations.length} demonstrations.`);
-    } catch (e) {
-        console.error("Error saving demonstrations:", e);
-        alert("Error saving demonstrations. Check console.");
-    }
+// --- Parameter Storage ---
+// const PARAMS_STORAGE_KEY = 'progressKnightAgentParams'; // Removed duplicate
+
+function saveAgentParams() {
+    // TODO: Read values from input fields, update agentParams object, save to localStorage
+    console.log("Saving agent parameters (Not implemented yet)");
 }
 
-function loadDemonstrations() {
-    try {
-        const savedDemos = localStorage.getItem(DEMOS_STORAGE_KEY);
-        if (savedDemos) {
-            demonstrations = JSON.parse(savedDemos);
-            console.log(`Loaded ${demonstrations.length} demonstrations from localStorage.`);
-            alert(`Loaded ${demonstrations.length} demonstrations.`);
-        } else {
-            demonstrations = [];
-            console.log("No saved demonstrations found.");
-        }
-        updateDemoCountUI(); // Update UI display
-    } catch (e) {
-        console.error("Error loading demonstrations:", e);
-        demonstrations = []; // Reset on error
-        updateDemoCountUI();
-        alert("Error loading demonstrations. Check console.");
-    }
-}
-
-function clearDemonstrations() {
-    if (confirm("Are you sure you want to clear all stored demonstrations? This cannot be undone.")) {
-        demonstrations = [];
-        localStorage.removeItem(DEMOS_STORAGE_KEY);
-        console.log("Cleared demonstrations.");
-        updateDemoCountUI();
-    }
-}
-
-// --- UI Handler Functions for Demonstrations ---
-function toggleRecording(isChecked) {
-    isRecording = isChecked;
-    console.log(`Demonstration recording ${isRecording ? 'ENABLED' : 'DISABLED'}`);
-    // Optional: Add visual feedback to the UI
-}
-
-function updateDemoCountUI() {
-    const demoCountEl = document.getElementById('demoCount');
-    if (demoCountEl) {
-        demoCountEl.textContent = demonstrations.length;
-    }
-}
-
-// Functions called by buttons
-function uiClearDemos() { clearDemonstrations(); }
-function uiSaveDemos() { saveDemonstrations(); }
-function uiLoadDemos() { loadDemonstrations(); }
-
-function uiPretrainAgent() {
-    if (!agent) {
-        alert("Agent is not initialized yet.");
-        return;
-    }
-    if (demonstrations.length === 0) {
-        alert("No demonstrations loaded. Please load or record demonstrations first.");
-        return;
-    }
-    
-    // Pause the agent before starting pretraining
-    if (typeof pauseAgent === 'function') {
-        console.log("Pausing agent for pretraining...");
-        pauseAgent();
-    } else {
-        console.warn("pauseAgent function not found, cannot pause automatically for pretraining.");
-    }
-
-    // Call the agent's pretrain method
-    agent.pretrain(demonstrations).catch(err => {
-         // Error handling improved in pretrain method itself
-         // console.error("Pretraining failed:", err);
-         // alert("Pretraining failed. Check console.");
-    });
+function loadAgentParams() {
+    // TODO: Load from localStorage, update agentParams, update input fields
+    console.log("Loading agent parameters (Not implemented yet)");
 } 
